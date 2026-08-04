@@ -12,10 +12,7 @@ import CodeExplorer from '@/components/CodeExplorer';
 import ArchitectureDiagram from '@/components/ArchitectureDiagram';
 import GitHubExportModal from '@/components/GitHubExportModal';
 import { Navbar } from '@/components/Navbar';
-import { ArrowLeft, FileText, Code2, GitBranch, Terminal } from 'lucide-react';
-import dynamic from 'next/dynamic';
-
-const InBrowserTerminal = dynamic(() => import('@/components/InBrowserTerminal'), { ssr: false });
+import { ArrowLeft, FileText, Code2, GitBranch } from 'lucide-react';
 
 const POLL_MS = 3000;
 
@@ -25,7 +22,7 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<ProcessingJob | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'spec' | 'code' | 'diagram' | 'terminal'>('spec');
+  const [activeTab, setActiveTab] = useState<'spec' | 'code' | 'diagram'>('spec');
   const [showExport, setShowExport] = useState(false);
 
   useEffect(() => { params.then((p) => setJobId(p.jobId)); }, [params]);
@@ -146,7 +143,6 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
                     { id: 'spec', label: 'Technical Spec', icon: <FileText size={14} /> },
                     { id: 'code', label: 'Generated Code', icon: <Code2 size={14} /> },
                     { id: 'diagram', label: 'Architecture', icon: <GitBranch size={14} /> },
-                    { id: 'terminal', label: 'Run Code', icon: <Terminal size={14} /> },
                   ] as const).map((tab) => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                       className={`flex items-center gap-1.5 px-5 py-3.5 text-sm font-medium border-b-2 transition-colors ${
@@ -174,11 +170,6 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
                     {activeTab === 'diagram' && job!.architectureDiagram && (
                       <motion.div key="diagram" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                         <ArchitectureDiagram mermaidCode={job!.architectureDiagram} />
-                      </motion.div>
-                    )}
-                    {activeTab === 'terminal' && job!.generatedCode && (
-                      <motion.div key="terminal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                        <InBrowserTerminal code={job!.generatedCode} />
                       </motion.div>
                     )}
                   </AnimatePresence>
