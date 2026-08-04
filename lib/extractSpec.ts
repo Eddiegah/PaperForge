@@ -1,89 +1,114 @@
 import { generate } from './llm';
 import { TechnicalSpec, PaperMetadata } from '@/types';
 
-const EXTRACTION_PROMPT = `You are an expert ML researcher extracting technical specifications from a research paper for code reproduction.
+// Compact prompt — shorter output = less truncation risk on Groq
+const EXTRACTION_PROMPT = `Extract technical specs from this ML paper. Return ONLY valid JSON, no explanation.
 
-Extract structured information and assess your confidence for each field.
+Use confidence: "high" (explicitly stated), "medium" (inferred), "low" (guessed), "missing" (absent).
 
-Confidence levels:
-- "high": Explicitly and clearly stated in the paper
-- "medium": Implied or reasonably inferred, not explicit
-- "low": Ambiguous guess from context
-- "missing": Not present in the paper
+JSON structure:
+{"metadata":{"title":"","authors":[],"abstract":""},"modelArchitecture":{"name":{"value":"","confidence":{"value":"high","reasoning":""}},"type":{"value":"","confidence":{"value":"high","reasoning":""}},"layers":{"value":[],"confidence":{"value":"high","reasoning":""}},"parameters":{"value":{},"confidence":{"value":"high","reasoning":""}},"description":{"value":"","confidence":{"value":"high","reasoning":""}}},"dataset":{"name":{"value":"","confidence":{"value":"high","reasoning":""}},"description":{"value":"","confidence":{"value":"high","reasoning":""}},"size":{"value":"","confidence":{"value":"high","reasoning":""}},"preprocessing":{"value":"","confidence":{"value":"high","reasoning":""}},"splits":{"value":{},"confidence":{"value":"high","reasoning":""}}},"trainingRecipe":{"optimizer":{"value":"","confidence":{"value":"high","reasoning":""}},"learningRate":{"value":"","confidence":{"value":"high","reasoning":""}},"batchSize":{"value":0,"confidence":{"value":"high","reasoning":""}},"epochs":{"value":0,"confidence":{"value":"high","reasoning":""}},"lossFunction":{"value":"","confidence":{"value":"high","reasoning":""}},"regularization":{"value":"","confidence":{"value":"high","reasoning":""}},"schedulers":{"value":[],"confidence":{"value":"high","reasoning":""}}},"evaluationMetrics":{"primary":{"value":"","confidence":{"value":"high","reasoning":""}},"secondary":{"value":[],"confidence":{"value":"high","reasoning":""}},"benchmarks":{"value":[],"confidence":{"value":"high","reasoning":""}},"results":{"value":{},"confidence":{"value":"high","reasoning":""}}}}
 
-Return ONLY valid JSON matching this exact structure:
+Rules:
+- Never fabricate. Use "missing" for absent fields.
+- Keep reasoning strings SHORT (under 20 words).
+- Return ONLY the JSON object.`;
 
-{
-  "metadata": {
-    "title": "...",
-    "authors": ["..."],
-    "abstract": "..."
-  },
-  "modelArchitecture": {
-    "name": { "value": "...", "confidence": { "value": "high|medium|low|missing", "reasoning": "..." }, "sourceSection": "..." },
-    "type": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "layers": { "value": ["layer1"], "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "parameters": { "value": { "hidden_dim": "...", "num_heads": "..." }, "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "description": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." }
-  },
-  "dataset": {
-    "name": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "description": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "size": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "preprocessing": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "splits": { "value": { "train": "...", "val": "...", "test": "..." }, "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." }
-  },
-  "trainingRecipe": {
-    "optimizer": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "learningRate": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "batchSize": { "value": 0, "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "epochs": { "value": 0, "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "lossFunction": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "regularization": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "schedulers": { "value": [], "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." }
-  },
-  "evaluationMetrics": {
-    "primary": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "secondary": { "value": [], "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "benchmarks": { "value": [], "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "results": { "value": {}, "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." }
-  }
+function makeEmptyField(reasoning = 'Not found in paper'): any {
+  return { value: '', confidence: { value: 'missing', reasoning } };
 }
 
-IMPORTANT: Never fabricate values. Use "missing" for absent fields. Return ONLY the JSON object.`;
+function makeEmptySpec(): TechnicalSpec {
+  return {
+    modelArchitecture: {
+      name: makeEmptyField(),
+      type: makeEmptyField(),
+      layers: { value: [], confidence: { value: 'missing', reasoning: 'Not found' } },
+      parameters: { value: {}, confidence: { value: 'missing', reasoning: 'Not found' } },
+      description: makeEmptyField(),
+    },
+    dataset: {
+      name: makeEmptyField(),
+      description: makeEmptyField(),
+      size: makeEmptyField(),
+      preprocessing: makeEmptyField(),
+      splits: { value: {}, confidence: { value: 'missing', reasoning: 'Not found' } },
+    },
+    trainingRecipe: {
+      optimizer: makeEmptyField(),
+      learningRate: makeEmptyField(),
+      batchSize: { value: 0, confidence: { value: 'missing', reasoning: 'Not found' } },
+      epochs: { value: 0, confidence: { value: 'missing', reasoning: 'Not found' } },
+      lossFunction: makeEmptyField(),
+      regularization: makeEmptyField(),
+      schedulers: { value: [], confidence: { value: 'missing', reasoning: 'Not found' } },
+    },
+    evaluationMetrics: {
+      primary: makeEmptyField(),
+      secondary: { value: [], confidence: { value: 'missing', reasoning: 'Not found' } },
+      benchmarks: { value: [], confidence: { value: 'missing', reasoning: 'Not found' } },
+      results: { value: {}, confidence: { value: 'missing', reasoning: 'Not found' } },
+    },
+  };
+}
+
+function safeParseJson(text: string): any | null {
+  // Strip code fences
+  let cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+  // Try direct parse
+  try { return JSON.parse(cleaned); } catch {}
+
+  // Find the JSON object boundaries
+  const start = cleaned.indexOf('{');
+  if (start === -1) return null;
+  cleaned = cleaned.slice(start);
+
+  // Try progressively closing the JSON
+  for (let closes = 0; closes <= 10; closes++) {
+    const attempt = cleaned + '}'.repeat(closes);
+    try { return JSON.parse(attempt); } catch {}
+  }
+
+  // Last resort: extract just metadata if available
+  const titleMatch = cleaned.match(/"title"\s*:\s*"([^"]+)"/);
+  const abstractMatch = cleaned.match(/"abstract"\s*:\s*"([^"]+)"/);
+  if (titleMatch) {
+    return {
+      metadata: {
+        title: titleMatch[1],
+        authors: [],
+        abstract: abstractMatch?.[1] || '',
+      },
+      modelArchitecture: null,
+      dataset: null,
+      trainingRecipe: null,
+      evaluationMetrics: null,
+    };
+  }
+
+  return null;
+}
 
 export async function extractTechnicalSpec(rawText: string): Promise<{
   metadata: PaperMetadata;
   technicalSpec: TechnicalSpec;
 }> {
-  const truncated = rawText.length > 40000 ? rawText.slice(0, 40000) : rawText;
+  // Use first 30k chars — enough for most papers, fits in Groq context
+  const truncated = rawText.length > 30000 ? rawText.slice(0, 30000) : rawText;
 
   const text = await generate({
-    prompt: `${EXTRACTION_PROMPT}\n\n---PAPER TEXT START---\n${truncated}\n---PAPER TEXT END---`,
-    maxTokens: 8192,
+    prompt: `${EXTRACTION_PROMPT}\n\nPAPER:\n${truncated}`,
+    maxTokens: 6000,
     temperature: 0.1,
   });
 
-  let parsed: any;
-  try {
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    // Try full parse first
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch {
-      // If truncated, try to close the JSON and parse what we have
-      const recovered = cleaned
-        .replace(/,\s*$/, '')  // remove trailing comma
-        .replace(/"\s*$/, '"') // close open string
-        + '}}}}';              // close nested objects
-      try {
-        parsed = JSON.parse(recovered);
-      } catch {
-        throw new Error(`Response truncated or malformed. The paper may be too long. Try a shorter paper or arXiv ID. Raw snippet: ${text.slice(0, 200)}`);
-      }
-    }
-  } catch (e) {
-    throw e instanceof Error ? e : new Error(`Parse failed: ${text.slice(0, 200)}`);
+  const parsed = safeParseJson(text);
+
+  if (!parsed) {
+    throw new Error(
+      'Could not extract structured data from this paper. The paper may use an unusual format. Try a different paper or the arXiv ID directly.'
+    );
   }
 
   const metadata: PaperMetadata = {
@@ -92,11 +117,13 @@ export async function extractTechnicalSpec(rawText: string): Promise<{
     abstract: parsed.metadata?.abstract || '',
   };
 
+  // Merge parsed fields with empty defaults so missing fields don't crash
+  const empty = makeEmptySpec();
   const technicalSpec: TechnicalSpec = {
-    modelArchitecture: parsed.modelArchitecture,
-    dataset: parsed.dataset,
-    trainingRecipe: parsed.trainingRecipe,
-    evaluationMetrics: parsed.evaluationMetrics,
+    modelArchitecture: { ...empty.modelArchitecture, ...(parsed.modelArchitecture || {}) },
+    dataset: { ...empty.dataset, ...(parsed.dataset || {}) },
+    trainingRecipe: { ...empty.trainingRecipe, ...(parsed.trainingRecipe || {}) },
+    evaluationMetrics: { ...empty.evaluationMetrics, ...(parsed.evaluationMetrics || {}) },
   };
 
   return { metadata, technicalSpec };
