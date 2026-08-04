@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const job = getJob(jobId);
+  const job = await getJob(jobId);
   if (!job || job.status !== 'complete') {
     return NextResponse.json(
       { error: 'Job not found or not complete. Processing must finish before exporting.' },
