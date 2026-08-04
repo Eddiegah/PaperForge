@@ -21,7 +21,9 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
   const [copied, setCopied] = useState(false);
   const [activeFile, setActiveFile] = useState('');
 
-  useEffect(() => { params.then(p => setJobId(p.jobId)); }, [params]);
+  useEffect(() => {
+    params.then(p => setJobId(p.jobId)).catch(() => setFetchError('Invalid URL'));
+  }, []);
 
   useEffect(() => {
     if (!jobId) return;
@@ -33,28 +35,28 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
     const poll = async () => {
       try {
         const res = await fetch(`/api/status/${jobId}`);
-        if (res.status === 404) { setFetchError('Job not found. Please resubmit the paper.'); return; }
-        const data: ProcessingJob = await res.json();
-        setJob(data);
-        if (!activeFile && data.generatedCode?.files?.[0]) {
-          setActiveFile(data.generatedCode.files[0].path);
+        if (!res.ok) {
+          if (res.status === 404) setFetchError('Job not found. Please submit a new paper.');
+          return;
         }
+        const data = await res.json();
+        if (data.error) { setFetchError(data.error); return; }
+        setJob(data as ProcessingJob);
         if (data.status === 'complete' || data.status === 'failed') {
           clearInterval(timer);
-          // Fetch full result (with code) only once on completion
           if (data.status === 'complete') {
-            fetch(`/api/result/${jobId}`)
-              .then(r => r.json())
-              .then(full => {
-                setFullResult(full);
+            try {
+              const r2 = await fetch(`/api/result/${jobId}`);
+              if (r2.ok) {
+                const full = await r2.json();
+                setFullResult(full as ProcessingJob);
                 if (full.generatedCode?.files?.[0]) setActiveFile(full.generatedCode.files[0].path);
-              })
-              .catch(() => {});
+              }
+            } catch {}
           }
         }
       } catch (e) {
-        setFetchError(`Connection error`);
-        clearInterval(timer);
+        console.error('Poll error:', e);
       }
     };
     poll();
