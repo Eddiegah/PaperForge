@@ -1,34 +1,28 @@
 /**
- * Technical specification extraction using the Anthropic Claude API.
- *
- * CRITICAL DESIGN DECISION:
- * For each extracted field, Claude is explicitly asked to rate its own confidence
- * (high/medium/low/missing) with a reason. This per-field signal is what makes the
- * Replication Difficulty Score genuinely grounded rather than an arbitrary LLM guess.
- *
- * Honest scope: This works well for standard ML/AI papers with conventional structure.
- * Non-standard formats, unusual notations, or heavily diagram-dependent architectures
- * will yield lower confidence scores, which is the correct honest behavior.
+ * Technical specification extraction using Google Gemini API (free tier).
+ * Gemini 2.0 Flash handles up to 1M tokens — perfect for long papers.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { TechnicalSpec, PaperMetadata } from '@/types';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+function getClient() {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('No LLM API key configured (GEMINI_API_KEY)');
+  return new GoogleGenerativeAI(apiKey);
+}
 
-const EXTRACTION_PROMPT = `You are an expert ML researcher extracting technical specifications from a research paper for the purpose of code reproduction.
+const EXTRACTION_PROMPT = `You are an expert ML researcher extracting technical specifications from a research paper for code reproduction.
 
-Your task is to extract structured information from the provided paper text and, critically, assess your own confidence for each extracted field.
+Extract structured information and assess your confidence for each field.
 
 Confidence levels:
-- "high": The paper explicitly and clearly states this value — you can quote it directly.
-- "medium": The paper implies or suggests this, or it can be reasonably inferred from context, but it's not explicitly stated.
-- "low": This is a guess or analogy from related work; the paper is genuinely ambiguous here.
-- "missing": This information is simply not present in the paper.
+- "high": Explicitly and clearly stated in the paper
+- "medium": Implied or reasonably inferred, not explicit
+- "low": Ambiguous guess from context
+- "missing": Not present in the paper
 
-Extract the following and return ONLY valid JSON matching the exact structure shown below.
+Return ONLY valid JSON matching this exact structure:
 
 {
   "metadata": {
@@ -39,8 +33,8 @@ Extract the following and return ONLY valid JSON matching the exact structure sh
   "modelArchitecture": {
     "name": { "value": "...", "confidence": { "value": "high|medium|low|missing", "reasoning": "..." }, "sourceSection": "..." },
     "type": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "layers": { "value": ["layer1", "layer2"], "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
-    "parameters": { "value": { "hidden_dim": "...", "num_heads": "...", "num_layers": "..." }, "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
+    "layers": { "value": ["layer1"], "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
+    "parameters": { "value": { "hidden_dim": "...", "num_heads": "..." }, "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." },
     "description": { "value": "...", "confidence": { "value": "...", "reasoning": "..." }, "sourceSection": "..." }
   },
   "dataset": {
@@ -68,44 +62,38 @@ Extract the following and return ONLY valid JSON matching the exact structure sh
 }
 
 IMPORTANT:
-- Never fabricate values. If a field is missing or ambiguous, set confidence to "low" or "missing" and state this in the reasoning.
-- The reasoning strings are displayed directly to researchers — write them as clear, honest explanations.
-- For missing numeric fields like batchSize and epochs, use 0 as the value placeholder.
-- Return ONLY the JSON object, no other text.`;
+- Never fabricate values. Use "missing" confidence for absent fields.
+- Reasoning strings are shown to researchers - be specific and honest.
+- Return ONLY the JSON object, no markdown, no explanation.`;
 
 export async function extractTechnicalSpec(rawText: string): Promise<{
   metadata: PaperMetadata;
   technicalSpec: TechnicalSpec;
 }> {
-  // Truncate to avoid token limits (~60k chars ≈ ~15k tokens, well within 200k context)
-  const truncatedText = rawText.length > 60000 ? rawText.slice(0, 60000) : rawText;
+  const client = getClient();
+  const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-  const response = await client.messages.create({
-    model: 'claude-opus-4-5',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: `${EXTRACTION_PROMPT}\n\n---PAPER TEXT START---\n${truncatedText}\n---PAPER TEXT END---`,
-      },
-    ],
+  const truncated = rawText.length > 80000 ? rawText.slice(0, 80000) : rawText;
+
+  const result = await model.generateContent({
+    contents: [{
+      role: 'user',
+      parts: [{ text: `${EXTRACTION_PROMPT}\n\n---PAPER TEXT START---\n${truncated}\n---PAPER TEXT END---` }]
+    }],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 4096,
+    },
   });
 
-  const content = response.content[0];
-  if (content.type !== 'text') {
-    throw new Error('Unexpected response type from Claude');
-  }
+  const text = result.response.text();
 
-  // Parse the JSON response
   let parsed: any;
   try {
-    // Strip any accidental markdown code fences
-    const cleaned = content.text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     parsed = JSON.parse(cleaned);
-  } catch (e) {
-    throw new Error(
-      `Failed to parse extraction response as JSON. Claude may have returned unexpected output. Raw: ${content.text.slice(0, 500)}`
-    );
+  } catch {
+    throw new Error(`Failed to parse Gemini extraction response. Raw: ${text.slice(0, 300)}`);
   }
 
   const metadata: PaperMetadata = {
@@ -114,7 +102,6 @@ export async function extractTechnicalSpec(rawText: string): Promise<{
     abstract: parsed.metadata?.abstract || '',
   };
 
-  // The parsed object should match TechnicalSpec shape directly
   const technicalSpec: TechnicalSpec = {
     modelArchitecture: parsed.modelArchitecture,
     dataset: parsed.dataset,

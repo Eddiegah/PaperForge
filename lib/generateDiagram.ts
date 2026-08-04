@@ -1,26 +1,21 @@
 /**
- * Architecture diagram generator.
- * Converts extracted model architecture details into a Mermaid.js flowchart.
- * Uses the LLM to produce the diagram when architecture details are rich enough.
+ * Architecture diagram generation using Google Gemini API (free tier).
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ModelArchitecture } from '@/types';
 
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+function getClient() {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) throw new Error('No LLM API key configured');
+  return new GoogleGenerativeAI(apiKey);
+}
 
-/**
- * Generate a Mermaid.js flowchart from extracted architecture details.
- * Returns valid Mermaid syntax that can be rendered client-side.
- */
 export async function generateMermaidDiagram(
   paperTitle: string,
   architecture: ModelArchitecture,
   rawText: string
 ): Promise<string> {
-  // If the architecture confidence is too low, return a minimal placeholder
   if (
     architecture.type.confidence.value === 'missing' &&
     architecture.description.confidence.value === 'missing'
@@ -28,61 +23,53 @@ export async function generateMermaidDiagram(
     return buildFallbackDiagram(paperTitle);
   }
 
-  const architectureContext = `
-    Model Name: ${architecture.name.value}
-    Type: ${architecture.type.value}
-    Layers: ${JSON.stringify(architecture.layers.value)}
-    Description: ${architecture.description.value}
-  `;
+  const client = getClient();
+  const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
-  const prompt = `You are generating a Mermaid.js flowchart diagram for a ML research paper architecture.
+  const prompt = `Generate a Mermaid.js flowchart diagram for this ML model architecture.
 
-Paper Title: ${paperTitle}
-Architecture Details: ${architectureContext}
+Paper: ${paperTitle}
+Model: ${architecture.name.value}
+Type: ${architecture.type.value}
+Description: ${architecture.description.value}
+Layers: ${JSON.stringify(architecture.layers.value)}
 
-Generate ONLY valid Mermaid.js flowchart syntax (TD direction) representing the model architecture.
+Generate ONLY valid Mermaid.js flowchart TD syntax.
 Rules:
-- Use flowchart TD syntax
-- Keep node labels concise (under 40 chars)
-- Use meaningful node IDs (no spaces)
-- Represent the main data flow from input through key components to output
-- If architecture details are vague, create a reasonable high-level diagram with clearly labeled "Estimated" components
-- Do NOT include any explanation, just the Mermaid code block content (no \`\`\`mermaid wrapper)
+- Use flowchart TD
+- Keep node labels under 40 chars
+- Show main data flow from input to output
+- If details are vague, label estimated nodes clearly
+- Return ONLY the Mermaid code, no explanation, no code fences
 
-Example format:
+Example:
 flowchart TD
     Input[Input Tokens] --> Embed[Token Embedding]
-    Embed --> Transformer[Transformer Blocks x N]
-    Transformer --> Pool[Pooling Layer]
-    Pool --> Output[Classification Head]`;
+    Embed --> Trans[Transformer Blocks]
+    Trans --> Pool[Pooling]
+    Pool --> Out[Output]`;
 
   try {
-    const response = await client.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 512,
-      messages: [{ role: 'user', content: prompt }],
+    const result = await model.generateContent({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
     });
 
-    const content = response.content[0];
-    if (content.type === 'text') {
-      // Strip any accidental code fences
-      const mermaid = content.text
-        .replace(/```mermaid\n?/g, '')
-        .replace(/```\n?/g, '')
-        .trim();
-      return mermaid;
-    }
-  } catch (error) {
-    console.error('Diagram generation failed:', error);
-  }
+    const text = result.response.text()
+      .replace(/```mermaid\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
 
-  return buildFallbackDiagram(paperTitle);
+    return text || buildFallbackDiagram(paperTitle);
+  } catch {
+    return buildFallbackDiagram(paperTitle);
+  }
 }
 
 function buildFallbackDiagram(paperTitle: string): string {
   return `flowchart TD
     Input[Input Data] --> Preprocess[Preprocessing]
-    Preprocess --> Model["Model\\n(architecture unclear from paper)"]
+    Preprocess --> Model["Model Architecture\\n(details unclear)"]
     Model --> Output[Output / Predictions]
     style Model fill:#fbbf24,stroke:#d97706,color:#1f2937`;
 }
