@@ -70,88 +70,86 @@ async function processPaper(jobId: string, rawText: string, pdfUrl?: string) {
 
 export async function POST(req: NextRequest) {
   const jobId = generateJobId();
-  await createJob(jobId);
+
+  try {
+    await createJob(jobId);
+  } catch (e) {
+    // If Redis fails, still return jobId — in-memory fallback will be used
+    console.error('createJob failed:', e);
+  }
 
   const contentType = req.headers.get('content-type') || '';
 
-  try {
-    if (contentType.includes('multipart/form-data')) {
+  if (contentType.includes('multipart/form-data')) {
+    let file: File | null = null;
+    try {
       const formData = await req.formData();
-      const file = formData.get('file') as File | null;
-
-      if (!file) {
-        return NextResponse.json({ error: 'No file field in form data' }, { status: 400 });
-      }
-      if (!file.type.includes('pdf') && !file.name.endsWith('.pdf')) {
-        return NextResponse.json({ error: 'Only PDF files are accepted' }, { status: 400 });
-      }
-
-      await updateJob(jobId, { status: 'uploading', progress: 5, statusMessage: 'Reading PDF...' });
-
-      // Start processing in background using waitUntil if available, otherwise run inline
-      const buffer = await file.arrayBuffer();
-      const rawText = await extractTextFromPdf(buffer);
-      await updateJob(jobId, { progress: 10, statusMessage: 'PDF parsed. Starting extraction...' });
-
-      // Return jobId immediately, then process
-      const response = NextResponse.json({ jobId }, { status: 202 });
-
-      // Use the after() API or just await — Vercel Fluid Compute keeps function alive
-      processPaper(jobId, rawText).catch(async (error) => {
-        await updateJob(jobId, {
-          status: 'failed',
-          progress: 0,
-          statusMessage: 'Processing failed.',
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-
-      return response;
-    } else {
-      const body = await req.json();
-      const arxivId = body.arxivId?.trim();
-
-      if (!arxivId) {
-        return NextResponse.json({ error: 'Missing arxivId' }, { status: 400 });
-      }
-
-      await updateJob(jobId, {
-        status: 'uploading',
-        progress: 5,
-        statusMessage: 'Fetching paper from arXiv...',
-      });
-
-      const { text, pdfUrl } = await fetchArxivPaper(arxivId);
-      await updateJob(jobId, {
-        progress: 10,
-        statusMessage: 'Paper fetched. Starting extraction...',
-        paperMetadata: { title: '', authors: [], abstract: '', arxivId, pdfUrl },
-      });
-
-      // Return jobId immediately, then process
-      const response = NextResponse.json({ jobId }, { status: 202 });
-
-      processPaper(jobId, text, pdfUrl).catch(async (error) => {
-        await updateJob(jobId, {
-          status: 'failed',
-          progress: 0,
-          statusMessage: 'Processing failed.',
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-
-      return response;
+      file = formData.get('file') as File | null;
+    } catch (e) {
+      return NextResponse.json({ error: 'Failed to parse form data' }, { status: 400 });
     }
-  } catch (error) {
+
+    if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    if (!file.type.includes('pdf') && !file.name.endsWith('.pdf'))
+      return NextResponse.json({ error: 'Only PDF files are accepted' }, { status: 400 });
+
+    // Read file buffer synchronously before returning
+    const buffer = await file.arrayBuffer();
+
+    // Return jobId immediately
+    // Then kick off processing (Vercel Fluid Compute keeps function alive for maxDuration)
+    const responsePromise = NextResponse.json({ jobId }, { status: 202 });
+
+    extractTextFromPdf(buffer)
+      .then((rawText) => processPaper(jobId, rawText))
+      .catch(async (error) => {
+        await updateJob(jobId, {
+          status: 'failed',
+          progress: 0,
+          statusMessage: 'Processing failed.',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return responsePromise;
+
+  } else {
+    let arxivId = '';
+    try {
+      const body = await req.json();
+      arxivId = body.arxivId?.trim() || '';
+    } catch {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
+    if (!arxivId) return NextResponse.json({ error: 'Missing arxivId' }, { status: 400 });
+
     await updateJob(jobId, {
-      status: 'failed',
-      progress: 0,
-      statusMessage: 'Processing failed.',
-      error: error instanceof Error ? error.message : String(error),
+      status: 'uploading',
+      progress: 5,
+      statusMessage: 'Fetching paper from arXiv...',
     });
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to process request' },
-      { status: 500 }
-    );
+
+    // Return jobId immediately
+    const responsePromise = NextResponse.json({ jobId }, { status: 202 });
+
+    fetchArxivPaper(arxivId)
+      .then(({ text, pdfUrl }) => {
+        return updateJob(jobId, {
+          progress: 10,
+          statusMessage: 'Paper fetched. Starting extraction...',
+          paperMetadata: { title: '', authors: [], abstract: '', arxivId, pdfUrl },
+        }).then(() => processPaper(jobId, text, pdfUrl));
+      })
+      .catch(async (error) => {
+        await updateJob(jobId, {
+          status: 'failed',
+          progress: 0,
+          statusMessage: 'Processing failed.',
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+
+    return responsePromise;
   }
 }
