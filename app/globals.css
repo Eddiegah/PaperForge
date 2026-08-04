@@ -15,6 +15,8 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  /* Prevent horizontal overflow on mobile */
+  overflow-x: hidden;
 }
 
 pre, code { font-family: var(--font-mono); }
@@ -24,35 +26,32 @@ pre, code { font-family: var(--font-mono); }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 99px; }
 .dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
-::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
 
 /* Radial gradient utility */
 .bg-gradient-radial {
   background-image: radial-gradient(var(--tw-gradient-stops));
 }
 
-/* Shimmer effect for cards */
-@keyframes shimmer {
-  0%   { background-position: -200% center; }
-  100% { background-position:  200% center; }
-}
-
-.shimmer {
-  background: linear-gradient(90deg, transparent 33%, rgba(255,255,255,0.08) 50%, transparent 66%);
-  background-size: 200% 100%;
-  animation: shimmer 3s ease infinite;
-}
-
-/* Float animation */
+/* Float animation - disabled on mobile for performance */
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
-  50%       { transform: translateY(-8px); }
+  50%       { transform: translateY(-6px); }
 }
+
 .float { animation: float 4s ease-in-out infinite; }
 
-/* Pulse glow */
-@keyframes pulse-glow {
-  0%, 100% { opacity: 0.4; }
-  50%       { opacity: 0.8; }
+/* Disable heavy animations on mobile */
+@media (max-width: 768px) {
+  .float { animation: none; }
+  /* Reduce blur effects on mobile */
+  .blur-3xl { filter: blur(40px); }
 }
-.pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+
+/* Respect user's reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  .float { animation: none; }
+}

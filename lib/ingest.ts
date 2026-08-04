@@ -70,6 +70,7 @@ export async function fetchArxivPaper(arxivId: string): Promise<{
       headers: {
         'User-Agent': 'PaperForge/1.0 (research-paper-reproduction-tool)',
       },
+      signal: AbortSignal.timeout(30000), // 30 second timeout
     });
 
     if (!response.ok) {
