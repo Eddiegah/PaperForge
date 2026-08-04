@@ -1,16 +1,5 @@
-/**
- * Technical specification extraction using Google Gemini API (free tier).
- * Gemini 2.0 Flash handles up to 1M tokens — perfect for long papers.
- */
-
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generate } from './llm';
 import { TechnicalSpec, PaperMetadata } from '@/types';
-
-function getClient() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('No LLM API key configured (GEMINI_API_KEY)');
-  return new GoogleGenerativeAI(apiKey);
-}
 
 const EXTRACTION_PROMPT = `You are an expert ML researcher extracting technical specifications from a research paper for code reproduction.
 
@@ -61,39 +50,26 @@ Return ONLY valid JSON matching this exact structure:
   }
 }
 
-IMPORTANT:
-- Never fabricate values. Use "missing" confidence for absent fields.
-- Reasoning strings are shown to researchers - be specific and honest.
-- Return ONLY the JSON object, no markdown, no explanation.`;
+IMPORTANT: Never fabricate values. Use "missing" for absent fields. Return ONLY the JSON object.`;
 
 export async function extractTechnicalSpec(rawText: string): Promise<{
   metadata: PaperMetadata;
   technicalSpec: TechnicalSpec;
 }> {
-  const client = getClient();
-  const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
   const truncated = rawText.length > 80000 ? rawText.slice(0, 80000) : rawText;
 
-  const result = await model.generateContent({
-    contents: [{
-      role: 'user',
-      parts: [{ text: `${EXTRACTION_PROMPT}\n\n---PAPER TEXT START---\n${truncated}\n---PAPER TEXT END---` }]
-    }],
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 4096,
-    },
+  const text = await generate({
+    prompt: `${EXTRACTION_PROMPT}\n\n---PAPER TEXT START---\n${truncated}\n---PAPER TEXT END---`,
+    maxTokens: 4096,
+    temperature: 0.1,
   });
-
-  const text = result.response.text();
 
   let parsed: any;
   try {
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     parsed = JSON.parse(cleaned);
   } catch {
-    throw new Error(`Failed to parse Gemini extraction response. Raw: ${text.slice(0, 300)}`);
+    throw new Error(`Failed to parse LLM extraction response. Raw: ${text.slice(0, 300)}`);
   }
 
   const metadata: PaperMetadata = {
