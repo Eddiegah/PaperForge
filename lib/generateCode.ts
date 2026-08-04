@@ -1,15 +1,5 @@
-/**
- * Code generation using Google Gemini API (free tier).
- */
-
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generate } from './llm';
 import { TechnicalSpec, PaperMetadata, DifficultyScore, GeneratedCode } from '@/types';
-
-function getClient() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('No LLM API key configured');
-  return new GoogleGenerativeAI(apiKey);
-}
 
 function buildPrompt(metadata: PaperMetadata, spec: TechnicalSpec, score: DifficultyScore): string {
   const ambiguityNotes = score.ambiguousFields
@@ -51,21 +41,14 @@ export async function generateRepoCode(
   spec: TechnicalSpec,
   score: DifficultyScore
 ): Promise<GeneratedCode> {
-  const client = getClient();
-  const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: buildPrompt(metadata, spec, score) }] }],
-    generationConfig: {
-      temperature: 0.2,
-      maxOutputTokens: 8192,
-    },
+  const text = await generate({
+    prompt: buildPrompt(metadata, spec, score),
+    maxTokens: 8192,
+    temperature: 0.2,
   });
 
-  const text = result.response.text();
   const files = parseFiles(text);
 
-  // Add README
   files.push({
     path: 'README.md',
     content: generateReadme(metadata, spec, score),

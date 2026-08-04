@@ -1,15 +1,5 @@
-/**
- * Architecture diagram generation using Google Gemini API (free tier).
- */
-
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { generate } from './llm';
 import { ModelArchitecture } from '@/types';
-
-function getClient() {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('No LLM API key configured');
-  return new GoogleGenerativeAI(apiKey);
-}
 
 export async function generateMermaidDiagram(
   paperTitle: string,
@@ -23,9 +13,6 @@ export async function generateMermaidDiagram(
     return buildFallbackDiagram(paperTitle);
   }
 
-  const client = getClient();
-  const model = client.getGenerativeModel({ model: 'gemini-2.0-flash' });
-
   const prompt = `Generate a Mermaid.js flowchart diagram for this ML model architecture.
 
 Paper: ${paperTitle}
@@ -36,10 +23,9 @@ Layers: ${JSON.stringify(architecture.layers.value)}
 
 Generate ONLY valid Mermaid.js flowchart TD syntax.
 Rules:
-- Use flowchart TD
+- Use flowchart TD direction
 - Keep node labels under 40 chars
 - Show main data flow from input to output
-- If details are vague, label estimated nodes clearly
 - Return ONLY the Mermaid code, no explanation, no code fences
 
 Example:
@@ -50,17 +36,9 @@ flowchart TD
     Pool --> Out[Output]`;
 
   try {
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
-    });
-
-    const text = result.response.text()
-      .replace(/```mermaid\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
-
-    return text || buildFallbackDiagram(paperTitle);
+    const text = await generate({ prompt, maxTokens: 512, temperature: 0.1 });
+    const cleaned = text.replace(/```mermaid\n?/g, '').replace(/```\n?/g, '').trim();
+    return cleaned || buildFallbackDiagram(paperTitle);
   } catch {
     return buildFallbackDiagram(paperTitle);
   }
