@@ -28,6 +28,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-paystack": "^6.0.0",
+    "resend": "^6.18.1",
     "tailwind-merge": "^3.6.0",
     "unpdf": "^1.8.0"
   },
