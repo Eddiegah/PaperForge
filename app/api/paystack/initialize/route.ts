@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const amount = plan === 'pro' ? 1200 : 3900; // in pesewas (GHS 12 / GHS 39)
+  const amount = plan === 'pro' ? 1500 : 3000; // in cents ($15 / $30)
 
   try {
     const response = await fetch('https://api.paystack.co/transaction/initialize', {

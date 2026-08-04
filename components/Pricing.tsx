@@ -26,7 +26,7 @@ const plans = [
   {
     name: 'Pro',
     tagline: 'For researchers replicating at pace.',
-    price: 'GHS 12',
+    price: '$15',
     period: '/ month',
     cta: 'Upgrade to Pro',
     plan: 'pro',
@@ -43,7 +43,7 @@ const plans = [
   {
     name: 'Team',
     tagline: 'For labs and teams shipping together.',
-    price: 'GHS 39',
+    price: '$30',
     period: '/ month',
     cta: 'Upgrade to Team',
     plan: 'team',
