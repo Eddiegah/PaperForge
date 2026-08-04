@@ -7,9 +7,11 @@ const nextConfig: NextConfig = {
     },
   },
   reactStrictMode: false,
-  // Ensure clients always get fresh JS chunks after deployments
-  generateBuildId: async () => {
-    return `build-${Date.now()}`;
+  // When a chunk load fails (e.g. after a new deployment),
+  // automatically reload instead of showing a blank crash
+  onDemandEntries: {
+    maxInactiveAge: 60 * 60 * 1000,
+    pagesBufferLength: 5,
   },
 };
 
