@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { Inter, JetBrains_Mono } from 'next/font/google';
 import { Providers } from '@/components/Providers';
+import { Analytics } from '@vercel/analytics/next';
+import { SpeedInsights } from '@vercel/speed-insights/next';
 import './globals.css';
 
 const inter = Inter({ variable: '--font-inter', subsets: ['latin'] });
@@ -19,6 +21,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       {/* NO transition-colors here — it breaks next-themes toggle */}
       <body className="bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans antialiased">
         <Providers>{children}</Providers>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

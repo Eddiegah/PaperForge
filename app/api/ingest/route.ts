@@ -6,10 +6,12 @@ import { computeDifficultyScore } from '@/lib/difficultyScore';
 import { generateRepoCode } from '@/lib/generateCode';
 import { generateMermaidDiagram } from '@/lib/generateDiagram';
 import { after } from 'next/server';
+import { auth } from '@/lib/auth';
+import { checkAndIncrementUsage, saveToHistory } from '@/lib/db';
 
 export const maxDuration = 300;
 
-async function processPaper(jobId: string, rawText: string, pdfUrl?: string) {
+async function processPaper(jobId: string, rawText: string, pdfUrl?: string, userEmail?: string) {
   try {
     await updateJob(jobId, {
       status: 'extracting',
@@ -58,6 +60,17 @@ async function processPaper(jobId: string, rawText: string, pdfUrl?: string) {
       generatedCode,
       completedAt: new Date(),
     });
+
+    // Save to history if we have user info
+    if (userEmail) {
+      await saveToHistory({
+        userEmail,
+        jobId,
+        paperTitle: metadata.title || 'Unknown Paper',
+        arxivId: metadata.arxivId,
+        difficultyScore: difficultyScore.score,
+      });
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[processPaper] Job ${jobId} failed:`, message);
@@ -72,6 +85,20 @@ async function processPaper(jobId: string, rawText: string, pdfUrl?: string) {
 
 export async function POST(req: NextRequest) {
   const jobId = generateJobId();
+
+  // Check rate limit for authenticated users
+  const session = await auth();
+  const userEmail = session?.user?.email || null;
+
+  if (userEmail) {
+    const usage = await checkAndIncrementUsage(userEmail, 5);
+    if (!usage.allowed) {
+      return NextResponse.json({
+        error: `Free tier limit reached: ${usage.used}/${usage.limit} papers this month. Upgrade to Pro for unlimited analyses.`,
+        rateLimited: true,
+      }, { status: 429 });
+    }
+  }
 
   try {
     await createJob(jobId);
@@ -103,7 +130,7 @@ export async function POST(req: NextRequest) {
       try {
         const rawText = await extractTextFromPdf(buffer);
         await updateJob(jobId, { progress: 10, statusMessage: 'PDF parsed. Starting extraction...' });
-        await processPaper(jobId, rawText);
+        await processPaper(jobId, rawText, undefined, userEmail ?? undefined);
       } catch (error) {
         await updateJob(jobId, {
           status: 'failed',
@@ -142,7 +169,7 @@ export async function POST(req: NextRequest) {
           statusMessage: 'Paper fetched. Starting extraction...',
           paperMetadata: { title: '', authors: [], abstract: '', arxivId, pdfUrl },
         });
-        await processPaper(jobId, text, pdfUrl);
+        await processPaper(jobId, text, pdfUrl, userEmail ?? undefined);
       } catch (error) {
         await updateJob(jobId, {
           status: 'failed',
