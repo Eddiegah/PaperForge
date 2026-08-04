@@ -9,10 +9,16 @@ import ProcessingStatus from '@/components/ProcessingStatus';
 import DifficultyScorePanel from '@/components/DifficultyScorePanel';
 import SpecTable from '@/components/SpecTable';
 import CodeExplorer from '@/components/CodeExplorer';
-import ArchitectureDiagram from '@/components/ArchitectureDiagram';
 import GitHubExportModal from '@/components/GitHubExportModal';
 import { Navbar } from '@/components/Navbar';
 import { ArrowLeft, FileText, Code2, GitBranch } from 'lucide-react';
+import dynamic from 'next/dynamic';
+
+// Load heavy components dynamically to prevent page crashes
+const ArchitectureDiagram = dynamic(() => import('@/components/ArchitectureDiagram'), {
+  ssr: false,
+  loading: () => <div className="h-40 flex items-center justify-center text-zinc-400 text-sm">Loading diagram...</div>,
+});
 
 const POLL_MS = 3000;
 
