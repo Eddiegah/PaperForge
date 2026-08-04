@@ -30,10 +30,12 @@ export async function generate(options: GenerateOptions): Promise<string> {
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { temperature, maxOutputTokens: maxTokens },
       });
-      return result.response.text();
+      const text = result.response.text();
+      if (text && text.trim().length > 0) return text;
+      throw new Error('Empty response from Gemini');
     } catch (geminiError: any) {
-      console.warn('Gemini failed, falling back to Anthropic:', geminiError.message?.slice(0, 100));
-      // Fall through to Anthropic
+      // Any Gemini error → fall through to Anthropic silently
+      console.warn('Gemini unavailable, using Anthropic:', geminiError?.message?.slice(0, 80));
     }
   }
 
