@@ -54,8 +54,8 @@ export function PaperForgeWordmark({ className = '' }: { className?: string }) {
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
       <PaperForgeLogo size={32} />
-      <span className="font-bold text-xl tracking-tight text-zinc-100 dark:text-zinc-100">
-        Paper<span className="text-indigo-400">Forge</span>
+      <span className="font-bold text-xl tracking-tight text-zinc-900 dark:text-zinc-100">
+        Paper<span className="text-indigo-500">Forge</span>
       </span>
     </div>
   );
