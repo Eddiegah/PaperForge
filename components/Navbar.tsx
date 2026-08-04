@@ -7,12 +7,14 @@ import { ThemeToggle } from './ThemeToggle';
 import { PaperForgeWordmark } from './Logo';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, LayoutDashboard, ChevronDown, Plus, Home } from 'lucide-react';
+import { LogOut, LayoutDashboard, ChevronDown, Plus, Home, Settings } from 'lucide-react';
+import SettingsModal from './SettingsModal';
 
 export function Navbar() {
   const { data: session } = useSession();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Determine if we're inside the app (not on landing page)
   const isAppPage = pathname.startsWith('/dashboard') ||
@@ -20,6 +22,7 @@ export function Navbar() {
                     pathname.startsWith('/auth');
 
   return (
+    <>
     <nav className="sticky top-0 z-50 w-full border-b border-zinc-200 dark:border-zinc-800 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-md">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
 
@@ -111,6 +114,13 @@ export function Navbar() {
                           <Plus size={14} className="text-zinc-400" />
                           New analysis
                         </Link>
+                        <button
+                          onClick={() => { setMenuOpen(false); setSettingsOpen(true); }}
+                          className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                        >
+                          <Settings size={14} className="text-zinc-400" />
+                          Settings
+                        </button>
                       </div>
 
                       <div className="border-t border-zinc-100 dark:border-zinc-800 py-1">
@@ -136,5 +146,9 @@ export function Navbar() {
         </div>
       </div>
     </nav>
+    <AnimatePresence>
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+    </AnimatePresence>
+    </>
   );
 }
