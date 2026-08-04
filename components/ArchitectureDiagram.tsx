@@ -22,7 +22,7 @@ export default function ArchitectureDiagram({ mermaidCode }: Props) {
         mermaid.initialize({
           startOnLoad: false,
           theme: 'dark',
-          securityLevel: 'loose',
+          securityLevel: 'strict', // strict prevents Chrome renderer crash
           themeVariables: {
             primaryColor: '#4f46e5',
             primaryTextColor: '#f4f4f5',

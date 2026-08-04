@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSession, signOut } from 'next-auth/react';
 import { useTheme } from 'next-themes';
@@ -20,6 +20,11 @@ export default function SettingsModal({ onClose }: Props) {
   const { resolvedTheme, setTheme } = useTheme();
   const [activeSection, setActiveSection] = useState<Section>('account');
   const [copied, setCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  const isDark = mounted ? resolvedTheme === 'dark' : false;
 
   // Generate a referral code from the user's email
   const referralCode = session?.user?.email
@@ -124,7 +129,7 @@ export default function SettingsModal({ onClose }: Props) {
                     <div className="flex rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700">
                       <button onClick={() => setTheme('light')}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
-                          resolvedTheme === 'light'
+                          !isDark
                             ? 'bg-zinc-900 text-white'
                             : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-700'
                         }`}>
@@ -132,7 +137,7 @@ export default function SettingsModal({ onClose }: Props) {
                       </button>
                       <button onClick={() => setTheme('dark')}
                         className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium transition-colors ${
-                          resolvedTheme === 'dark'
+                          isDark
                             ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900'
                             : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-700'
                         }`}>

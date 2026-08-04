@@ -342,7 +342,11 @@ function DiagramView({ mermaidCode }: { mermaidCode: string }) {
   useEffect(() => {
     let cancelled = false;
     import('mermaid').then(m => {
-      m.default.initialize({ startOnLoad: false, theme: 'dark', securityLevel: 'loose' });
+      m.default.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'strict', // MUST be strict - 'loose' crashes Chrome renderer
+      });
       return m.default.render(`d${Date.now()}`, mermaidCode);
     }).then(r => {
       if (!cancelled) setSvg(r.svg);
