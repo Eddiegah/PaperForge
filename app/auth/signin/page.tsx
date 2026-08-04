@@ -4,24 +4,30 @@ import { signIn } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { PaperForgeLogo } from '@/components/Logo';
-import { Mail, GitBranch, ArrowRight, CheckCircle } from 'lucide-react';
+import { Mail, Eye, EyeOff, GitBranch, ArrowRight, CheckCircle, Lock } from 'lucide-react';
+
+type Mode = 'signin' | 'signup' | 'email-sent' | 'forgot';
 
 export default function SignInPage() {
+  const [mode, setMode] = useState<Mode>('signin');
   const [loading, setLoading] = useState<string | null>(null);
-  const [mode, setMode] = useState<'options' | 'email' | 'sent'>('options');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
+  const [forgotSent, setForgotSent] = useState(false);
 
   const handleOAuth = async (provider: string) => {
     setLoading(provider);
     await signIn(provider, { callbackUrl: '/dashboard' });
   };
 
-  const handleMagicLink = async (e: React.FormEvent) => {
+  const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading('email');
 
+    // Send magic link (passwordless)
     try {
       const res = await fetch('/api/auth/magic-link', {
         method: 'POST',
@@ -29,177 +35,220 @@ export default function SignInPage() {
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
-
       if (!res.ok) {
-        setError(data.error || 'Failed to send email');
-        setLoading(null);
-        return;
+        setError(data.error || 'Failed to send sign-in link. Try GitHub or Google.');
+      } else {
+        setMode('email-sent');
       }
-
-      setMode('sent');
     } catch {
-      setError('Something went wrong. Please try again.');
+      setError('Network error. Please try again.');
     } finally {
       setLoading(null);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-indigo-50/40
-      dark:from-zinc-950 dark:via-zinc-900 dark:to-indigo-950/20
-      flex items-center justify-center p-4">
+  const handleForgot = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading('forgot');
+    // Send magic link as password reset
+    try {
+      await fetch('/api/auth/magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      setForgotSent(true);
+    } catch {}
+    setLoading(null);
+  };
 
-      {/* Background glow */}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-indigo-50/30
+      dark:from-zinc-950 dark:via-zinc-900 dark:to-indigo-950/20 flex items-center justify-center p-4">
+
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[400px]
           bg-indigo-100/50 dark:bg-indigo-600/8 rounded-full blur-3xl" />
       </div>
 
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="relative w-full max-w-sm"
-      >
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800
-          rounded-2xl p-8 shadow-xl shadow-zinc-200/60 dark:shadow-black/30">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }} className="relative w-full max-w-sm">
 
-          {/* Logo */}
-          <div className="flex flex-col items-center mb-7">
-            <PaperForgeLogo size={44} />
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800
+          rounded-2xl shadow-xl shadow-zinc-200/60 dark:shadow-black/30 overflow-hidden">
+
+          {/* Logo header */}
+          <div className="px-8 pt-8 pb-6 text-center border-b border-zinc-100 dark:border-zinc-800">
+            <PaperForgeLogo size={40} className="mx-auto" />
             <h1 className="mt-3 text-xl font-bold text-zinc-900 dark:text-zinc-100">PaperForge</h1>
-            <p className="mt-1 text-zinc-400 text-xs text-center">Sign in to start analyzing papers</p>
+            <p className="mt-1 text-zinc-400 text-xs">Sign in to start analyzing papers</p>
           </div>
 
-          <AnimatePresence mode="wait">
+          <div className="px-8 py-6">
+            <AnimatePresence mode="wait">
 
-            {/* Sent confirmation */}
-            {mode === 'sent' && (
-              <motion.div key="sent"
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="text-center space-y-4 py-4"
-              >
-                <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mx-auto">
-                  <CheckCircle size={28} className="text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-zinc-900 dark:text-zinc-100 mb-1">Check your email</h3>
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    We sent a sign-in link to<br />
-                    <strong className="text-zinc-700 dark:text-zinc-300">{email}</strong>
-                  </p>
-                </div>
-                <p className="text-xs text-zinc-400">The link expires in 15 minutes.</p>
-                <button onClick={() => { setMode('options'); setEmail(''); }}
-                  className="text-xs text-indigo-500 hover:underline transition-colors">
-                  Use a different method
-                </button>
-              </motion.div>
-            )}
+              {/* Email sent state */}
+              {mode === 'email-sent' && (
+                <motion.div key="sent" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+                  className="text-center py-4 space-y-4">
+                  <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mx-auto">
+                    <CheckCircle size={26} className="text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-zinc-900 dark:text-zinc-100 mb-1">Check your inbox</h3>
+                    <p className="text-sm text-zinc-500">We sent a sign-in link to</p>
+                    <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{email}</p>
+                  </div>
+                  <p className="text-xs text-zinc-400">Link expires in 15 minutes. Check your spam folder if you don't see it.</p>
+                  <button onClick={() => { setMode('signin'); setEmail(''); }}
+                    className="text-xs text-indigo-500 hover:underline">
+                    Use a different method
+                  </button>
+                </motion.div>
+              )}
 
-            {/* Main options */}
-            {mode === 'options' && (
-              <motion.div key="options" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-                {/* GitHub */}
-                <button onClick={() => handleOAuth('github')} disabled={!!loading}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl
-                    bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white
-                    text-white dark:text-zinc-900 font-medium text-sm
-                    disabled:opacity-60 transition-all">
-                  {loading === 'github' ? <Spinner /> : <GitBranch size={16} />}
-                  {loading === 'github' ? 'Connecting...' : 'Continue with GitHub'}
-                </button>
+              {/* Forgot password */}
+              {mode === 'forgot' && (
+                <motion.form key="forgot" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
+                  onSubmit={handleForgot} className="space-y-4">
+                  <button type="button" onClick={() => { setMode('signin'); setForgotSent(false); }}
+                    className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors">
+                    Back to sign in
+                  </button>
+                  <div>
+                    <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Reset access</h3>
+                    <p className="text-xs text-zinc-400">Enter your email and we will send a sign-in link.</p>
+                  </div>
+                  {forgotSent ? (
+                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 text-sm text-center">
+                      Sign-in link sent to {email}
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                          placeholder="Email address" required
+                          className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm bg-zinc-50 dark:bg-zinc-800
+                            border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100
+                            placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                      </div>
+                      <button type="submit" disabled={loading === 'forgot'}
+                        className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm disabled:opacity-60 transition-colors">
+                        {loading === 'forgot' ? 'Sending...' : 'Send sign-in link'}
+                      </button>
+                    </>
+                  )}
+                </motion.form>
+              )}
 
-                {/* Google */}
-                <button onClick={() => handleOAuth('google')} disabled={!!loading}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl
-                    bg-white hover:bg-zinc-50 text-zinc-800 font-medium text-sm
-                    disabled:opacity-60 transition-all border border-zinc-200 shadow-sm">
-                  {loading === 'google' ? <Spinner dark /> : <GoogleIcon />}
-                  {loading === 'google' ? 'Connecting...' : 'Continue with Google'}
-                </button>
+              {/* Main sign-in / sign-up */}
+              {(mode === 'signin' || mode === 'signup') && (
+                <motion.div key="main" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
 
-                <div className="flex items-center gap-3 my-1">
-                  <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
-                  <span className="text-xs text-zinc-400">or</span>
-                  <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
-                </div>
+                  {/* Sign in / Sign up toggle */}
+                  <div className="text-center">
+                    <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">
+                      {mode === 'signin' ? 'Sign In' : 'Create Account'}
+                    </h2>
+                    <p className="text-sm text-zinc-400">
+                      {mode === 'signin' ? 'Not registered yet? ' : 'Already have an account? '}
+                      <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}
+                        className="text-indigo-500 hover:text-indigo-600 font-semibold transition-colors">
+                        {mode === 'signin' ? 'Sign Up' : 'Sign In'}
+                      </button>
+                    </p>
+                  </div>
 
-                {/* Email magic link */}
-                <button onClick={() => setMode('email')} disabled={!!loading}
-                  className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl
-                    bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700
-                    text-zinc-700 dark:text-zinc-300 font-medium text-sm
-                    transition-all border border-zinc-200 dark:border-zinc-700">
-                  <Mail size={16} />
-                  Continue with email
-                </button>
-              </motion.div>
-            )}
+                  {/* Google */}
+                  <button onClick={() => handleOAuth('google')} disabled={!!loading}
+                    className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl
+                      border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800
+                      hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200
+                      font-medium text-sm disabled:opacity-60 transition-all shadow-sm">
+                    {loading === 'google' ? <Spinner dark /> : <GoogleIcon />}
+                    {loading === 'google' ? 'Connecting...' : 'Continue with Google'}
+                  </button>
 
-            {/* Email form */}
-            {mode === 'email' && (
-              <motion.form key="email"
-                initial={{ opacity: 0, x: 8 }}
-                animate={{ opacity: 1, x: 0 }}
-                onSubmit={handleMagicLink}
-                className="space-y-4"
-              >
-                <button type="button" onClick={() => { setMode('options'); setError(''); }}
-                  className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
-                  Back
-                </button>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+                    <span className="text-xs text-zinc-400">or</span>
+                    <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
+                  </div>
 
-                <div>
-                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Sign in with email</h3>
-                  <p className="text-xs text-zinc-400">
-                    We will send a sign-in link to your inbox. No password needed.
-                  </p>
-                </div>
+                  {/* Email form */}
+                  <form onSubmit={handleEmailAuth} className="space-y-3">
+                    <div>
+                      <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block mb-1">Email</label>
+                      <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                        placeholder="Email address" required
+                        className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-zinc-50 dark:bg-zinc-800
+                          border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100
+                          placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </div>
 
-                <div className="relative">
-                  <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@example.com"
-                    required
-                    autoFocus
-                    className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm
-                      bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700
-                      text-zinc-900 dark:text-zinc-100 placeholder-zinc-400
-                      focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  />
-                </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Password</label>
+                        {mode === 'signin' && (
+                          <button type="button" onClick={() => { setMode('forgot'); setForgotSent(false); }}
+                            className="text-xs text-indigo-500 hover:text-indigo-600 transition-colors">
+                            Forgot password?
+                          </button>
+                        )}
+                      </div>
+                      <div className="relative">
+                        <input type={showPw ? 'text' : 'password'} value={password}
+                          onChange={e => setPassword(e.target.value)}
+                          placeholder="Password" required
+                          className="w-full px-3.5 pr-10 py-2.5 rounded-xl text-sm bg-zinc-50 dark:bg-zinc-800
+                            border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100
+                            placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        <button type="button" onClick={() => setShowPw(!showPw)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600">
+                          {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
 
-                {error && (
-                  <p className="text-xs text-red-500 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
-                    {error}
-                  </p>
-                )}
+                    {error && (
+                      <p className="text-xs text-red-500 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+                        {error}
+                      </p>
+                    )}
 
-                <button type="submit" disabled={loading === 'email' || !email}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl
-                    bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm
-                    disabled:opacity-60 transition-colors">
-                  {loading === 'email' ? <Spinner /> : <ArrowRight size={15} />}
-                  {loading === 'email' ? 'Sending...' : 'Send sign-in link'}
-                </button>
-              </motion.form>
-            )}
+                    <button type="submit" disabled={loading === 'email' || !email || !password}
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
+                        text-white font-bold text-sm disabled:opacity-60 transition-colors
+                        flex items-center justify-center gap-2">
+                      {loading === 'email' ? <Spinner /> : null}
+                      {loading === 'email' ? 'Please wait...' : mode === 'signin' ? 'SIGN IN' : 'CREATE ACCOUNT'}
+                    </button>
+                  </form>
 
-          </AnimatePresence>
+                  {/* GitHub - highlighted as required for push feature */}
+                  <div className="pt-1 border-t border-zinc-100 dark:border-zinc-800">
+                    <button onClick={() => handleOAuth('github')} disabled={!!loading}
+                      className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl
+                        bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white
+                        text-white dark:text-zinc-900 font-medium text-sm
+                        disabled:opacity-60 transition-all">
+                      {loading === 'github' ? <Spinner /> : <GitBranch size={15} />}
+                      {loading === 'github' ? 'Connecting...' : 'Continue with GitHub'}
+                    </button>
+                    <p className="text-[10px] text-zinc-400 text-center mt-1.5">
+                      Required to push generated code to GitHub
+                    </p>
+                  </div>
 
-          {mode === 'options' && (
-            <p className="text-zinc-400 text-xs text-center mt-5">
-              By signing in you agree to use this tool responsibly.
-            </p>
-          )}
+                </motion.div>
+              )}
+
+            </AnimatePresence>
+          </div>
         </div>
 
-        <p className="text-center text-zinc-400 text-xs mt-5">Honest research acceleration</p>
+        <p className="text-center text-zinc-400 text-xs mt-4">Honest research acceleration</p>
       </motion.div>
     </div>
   );
@@ -207,7 +256,7 @@ export default function SignInPage() {
 
 function Spinner({ dark }: { dark?: boolean }) {
   return (
-    <svg className={`animate-spin w-4 h-4 ${dark ? 'text-zinc-800' : 'text-white'}`} viewBox="0 0 24 24" fill="none">
+    <svg className={`animate-spin w-4 h-4 ${dark ? 'text-zinc-700' : 'text-white'}`} viewBox="0 0 24 24" fill="none">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
     </svg>

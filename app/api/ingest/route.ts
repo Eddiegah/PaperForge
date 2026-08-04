@@ -5,6 +5,7 @@ import { extractTechnicalSpec } from '@/lib/extractSpec';
 import { computeDifficultyScore } from '@/lib/difficultyScore';
 import { generateRepoCode } from '@/lib/generateCode';
 import { generateMermaidDiagram } from '@/lib/generateDiagram';
+import { after } from 'next/server';
 
 export const maxDuration = 300;
 
@@ -59,6 +60,7 @@ async function processPaper(jobId: string, rawText: string, pdfUrl?: string) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    console.error(`[processPaper] Job ${jobId} failed:`, message);
     await updateJob(jobId, {
       status: 'failed',
       progress: 0,
@@ -74,7 +76,6 @@ export async function POST(req: NextRequest) {
   try {
     await createJob(jobId);
   } catch (e) {
-    // If Redis fails, still return jobId — in-memory fallback will be used
     console.error('createJob failed:', e);
   }
 
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
     try {
       const formData = await req.formData();
       file = formData.get('file') as File | null;
-    } catch (e) {
+    } catch {
       return NextResponse.json({ error: 'Failed to parse form data' }, { status: 400 });
     }
 
@@ -93,25 +94,27 @@ export async function POST(req: NextRequest) {
     if (!file.type.includes('pdf') && !file.name.endsWith('.pdf'))
       return NextResponse.json({ error: 'Only PDF files are accepted' }, { status: 400 });
 
-    // Read file buffer synchronously before returning
+    await updateJob(jobId, { status: 'uploading', progress: 5, statusMessage: 'Reading PDF...' });
+
     const buffer = await file.arrayBuffer();
 
-    // Return jobId immediately
-    // Then kick off processing (Vercel Fluid Compute keeps function alive for maxDuration)
-    const responsePromise = NextResponse.json({ jobId }, { status: 202 });
-
-    extractTextFromPdf(buffer)
-      .then((rawText) => processPaper(jobId, rawText))
-      .catch(async (error) => {
+    // Use after() to keep processing alive after response is sent
+    after(async () => {
+      try {
+        const rawText = await extractTextFromPdf(buffer);
+        await updateJob(jobId, { progress: 10, statusMessage: 'PDF parsed. Starting extraction...' });
+        await processPaper(jobId, rawText);
+      } catch (error) {
         await updateJob(jobId, {
           status: 'failed',
           progress: 0,
           statusMessage: 'Processing failed.',
           error: error instanceof Error ? error.message : String(error),
         });
-      });
+      }
+    });
 
-    return responsePromise;
+    return NextResponse.json({ jobId }, { status: 202 });
 
   } else {
     let arxivId = '';
@@ -130,26 +133,26 @@ export async function POST(req: NextRequest) {
       statusMessage: 'Fetching paper from arXiv...',
     });
 
-    // Return jobId immediately
-    const responsePromise = NextResponse.json({ jobId }, { status: 202 });
-
-    fetchArxivPaper(arxivId)
-      .then(({ text, pdfUrl }) => {
-        return updateJob(jobId, {
+    // Use after() to keep processing alive after response is sent
+    after(async () => {
+      try {
+        const { text, pdfUrl } = await fetchArxivPaper(arxivId);
+        await updateJob(jobId, {
           progress: 10,
           statusMessage: 'Paper fetched. Starting extraction...',
           paperMetadata: { title: '', authors: [], abstract: '', arxivId, pdfUrl },
-        }).then(() => processPaper(jobId, text, pdfUrl));
-      })
-      .catch(async (error) => {
+        });
+        await processPaper(jobId, text, pdfUrl);
+      } catch (error) {
         await updateJob(jobId, {
           status: 'failed',
           progress: 0,
           statusMessage: 'Processing failed.',
           error: error instanceof Error ? error.message : String(error),
         });
-      });
+      }
+    });
 
-    return responsePromise;
+    return NextResponse.json({ jobId }, { status: 202 });
   }
 }
