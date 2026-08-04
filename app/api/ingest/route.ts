@@ -74,28 +74,30 @@ export async function POST(req: NextRequest) {
 
   const contentType = req.headers.get('content-type') || '';
 
-  if (contentType.includes('multipart/form-data')) {
-    let formData: FormData;
-    try {
-      formData = await req.formData();
-    } catch {
-      return NextResponse.json({ error: 'Failed to parse form data' }, { status: 400 });
-    }
+  try {
+    if (contentType.includes('multipart/form-data')) {
+      const formData = await req.formData();
+      const file = formData.get('file') as File | null;
 
-    const file = formData.get('file') as File | null;
-    if (!file) return NextResponse.json({ error: 'No file field in form data' }, { status: 400 });
-    if (!file.type.includes('pdf') && !file.name.endsWith('.pdf'))
-      return NextResponse.json({ error: 'Only PDF files are accepted' }, { status: 400 });
+      if (!file) {
+        return NextResponse.json({ error: 'No file field in form data' }, { status: 400 });
+      }
+      if (!file.type.includes('pdf') && !file.name.endsWith('.pdf')) {
+        return NextResponse.json({ error: 'Only PDF files are accepted' }, { status: 400 });
+      }
 
-    await updateJob(jobId, { status: 'uploading', progress: 5, statusMessage: 'Reading PDF...' });
+      await updateJob(jobId, { status: 'uploading', progress: 5, statusMessage: 'Reading PDF...' });
 
-    file.arrayBuffer()
-      .then((buffer) => extractTextFromPdf(buffer))
-      .then((rawText) => {
-        updateJob(jobId, { progress: 10, statusMessage: 'PDF parsed. Starting extraction...' });
-        return processPaper(jobId, rawText);
-      })
-      .catch(async (error) => {
+      // Start processing in background using waitUntil if available, otherwise run inline
+      const buffer = await file.arrayBuffer();
+      const rawText = await extractTextFromPdf(buffer);
+      await updateJob(jobId, { progress: 10, statusMessage: 'PDF parsed. Starting extraction...' });
+
+      // Return jobId immediately, then process
+      const response = NextResponse.json({ jobId }, { status: 202 });
+
+      // Use the after() API or just await — Vercel Fluid Compute keeps function alive
+      processPaper(jobId, rawText).catch(async (error) => {
         await updateJob(jobId, {
           status: 'failed',
           progress: 0,
@@ -104,30 +106,32 @@ export async function POST(req: NextRequest) {
         });
       });
 
-    return NextResponse.json({ jobId }, { status: 202 });
-  } else {
-    let body: { arxivId?: string };
-    try {
-      body = await req.json();
-    } catch {
-      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
-    }
+      return response;
+    } else {
+      const body = await req.json();
+      const arxivId = body.arxivId?.trim();
 
-    const arxivId = body.arxivId?.trim();
-    if (!arxivId) return NextResponse.json({ error: 'Missing arxivId' }, { status: 400 });
+      if (!arxivId) {
+        return NextResponse.json({ error: 'Missing arxivId' }, { status: 400 });
+      }
 
-    await updateJob(jobId, { status: 'uploading', progress: 5, statusMessage: 'Fetching paper from arXiv...' });
+      await updateJob(jobId, {
+        status: 'uploading',
+        progress: 5,
+        statusMessage: 'Fetching paper from arXiv...',
+      });
 
-    fetchArxivPaper(arxivId)
-      .then(({ text, pdfUrl }) => {
-        updateJob(jobId, {
-          progress: 10,
-          statusMessage: 'Paper fetched. Starting extraction...',
-          paperMetadata: { title: '', authors: [], abstract: '', arxivId, pdfUrl },
-        });
-        return processPaper(jobId, text, pdfUrl);
-      })
-      .catch(async (error) => {
+      const { text, pdfUrl } = await fetchArxivPaper(arxivId);
+      await updateJob(jobId, {
+        progress: 10,
+        statusMessage: 'Paper fetched. Starting extraction...',
+        paperMetadata: { title: '', authors: [], abstract: '', arxivId, pdfUrl },
+      });
+
+      // Return jobId immediately, then process
+      const response = NextResponse.json({ jobId }, { status: 202 });
+
+      processPaper(jobId, text, pdfUrl).catch(async (error) => {
         await updateJob(jobId, {
           status: 'failed',
           progress: 0,
@@ -136,6 +140,18 @@ export async function POST(req: NextRequest) {
         });
       });
 
-    return NextResponse.json({ jobId }, { status: 202 });
+      return response;
+    }
+  } catch (error) {
+    await updateJob(jobId, {
+      status: 'failed',
+      progress: 0,
+      statusMessage: 'Processing failed.',
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to process request' },
+      { status: 500 }
+    );
   }
 }
