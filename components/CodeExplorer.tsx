@@ -2,9 +2,13 @@
 
 import { useState } from 'react';
 import { GeneratedCode } from '@/types';
-import { Copy, Check, GitBranch } from 'lucide-react';
+import { Copy, Check, GitBranch, ExternalLink, Loader2 } from 'lucide-react';
 
-interface Props { code: GeneratedCode; onExport: () => void; }
+interface Props {
+  code: GeneratedCode;
+  onExport: () => void;
+  jobId?: string;
+}
 
 const langDot: Record<string, string> = {
   python:   'bg-blue-500',
@@ -12,9 +16,10 @@ const langDot: Record<string, string> = {
   text:     'bg-zinc-400',
 };
 
-export default function CodeExplorer({ code, onExport }: Props) {
+export default function CodeExplorer({ code, onExport, jobId }: Props) {
   const [active, setActive] = useState(code.files[0]?.path || '');
   const [copied, setCopied] = useState(false);
+  const [colabLoading, setColabLoading] = useState(false);
 
   const file = code.files.find((f) => f.path === active);
 
@@ -24,6 +29,44 @@ export default function CodeExplorer({ code, onExport }: Props) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  };
+
+  const openInColab = async () => {
+    if (!jobId) return;
+    setColabLoading(true);
+    try {
+      const res = await fetch('/api/export-colab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        console.error('Colab export failed:', err.error);
+        setColabLoading(false);
+        return;
+      }
+
+      // Trigger file download
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition') || '';
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const filename = filenameMatch?.[1] ?? 'notebook.ipynb';
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Colab export error:', e);
+    } finally {
+      setColabLoading(false);
+    }
   };
 
   return (
@@ -63,6 +106,20 @@ export default function CodeExplorer({ code, onExport }: Props) {
             {copied ? <Check size={12} className="text-emerald-500" /> : <Copy size={12} />}
             {copied ? 'Copied' : 'Copy'}
           </button>
+          {jobId && (
+            <button
+              onClick={openInColab}
+              disabled={colabLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-amber-500 hover:bg-amber-400 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium transition-colors"
+            >
+              {colabLoading ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <ExternalLink size={12} />
+              )}
+              {colabLoading ? 'Exporting…' : 'Open in Colab'}
+            </button>
+          )}
           <button onClick={onExport}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-white text-white dark:text-zinc-900 font-medium transition-colors">
             <GitBranch size={12} />

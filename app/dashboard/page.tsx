@@ -5,8 +5,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Navbar } from '@/components/Navbar';
 import UploadZone from '@/components/UploadZone';
-import { Sparkles, History, ArrowRight } from 'lucide-react';
+import ArxivSearch from '@/components/ArxivSearch';
+import { Sparkles, History, ArrowRight, Search, GitCompare } from 'lucide-react';
 import { motion } from 'framer-motion';
+import Link from 'next/link';
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -18,6 +20,20 @@ export default function DashboardPage() {
 
   const handleSubmit = (jobId: string) => {
     router.push(`/processing/${jobId}`);
+  };
+
+  const handleAnalyze = (arxivId: string) => {
+    // Kick off a job for the selected arXiv paper
+    fetch('/api/ingest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ arxivId }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.jobId) router.push(`/processing/${data.jobId}`);
+      })
+      .catch(console.error);
   };
 
   if (status === 'loading') {
@@ -54,11 +70,34 @@ export default function DashboardPage() {
           transition={{ delay: 0.05 }}
           className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-8 mb-8 shadow-sm"
         >
-          <div className="flex items-center gap-2 mb-6">
-            <Sparkles size={18} className="text-indigo-500" />
-            <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">Analyze a paper</h2>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <Sparkles size={18} className="text-indigo-500" />
+              <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">Analyze a paper</h2>
+            </div>
+            <Link
+              href="/compare"
+              className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+            >
+              <GitCompare size={13} />
+              Compare papers
+            </Link>
           </div>
           <UploadZone onSubmit={handleSubmit} />
+        </motion.div>
+
+        {/* arXiv Search */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.08 }}
+          className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6 mb-8 shadow-sm"
+        >
+          <div className="flex items-center gap-2 mb-5">
+            <Search size={16} className="text-zinc-400" />
+            <h2 className="font-semibold text-zinc-900 dark:text-zinc-100 text-sm">Search papers</h2>
+          </div>
+          <ArxivSearch onAnalyze={handleAnalyze} />
         </motion.div>
 
         {/* Quick examples */}

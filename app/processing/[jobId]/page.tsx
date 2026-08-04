@@ -168,7 +168,7 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
                     )}
                     {activeTab === 'code' && job!.generatedCode && (
                       <motion.div key="code" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                        <CodeExplorer code={job!.generatedCode} onExport={() => setShowExport(true)} />
+                        <CodeExplorer code={job!.generatedCode} onExport={() => setShowExport(true)} jobId={jobId ?? undefined} />
                       </motion.div>
                     )}
                     {activeTab === 'diagram' && job!.architectureDiagram && (
