@@ -4,45 +4,82 @@ import { signIn } from 'next-auth/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { PaperForgeLogo } from '@/components/Logo';
-import { Mail, Eye, EyeOff, GitBranch, ArrowRight, CheckCircle, Lock } from 'lucide-react';
+import { Eye, EyeOff, GitBranch } from 'lucide-react';
 
-type Mode = 'signin' | 'signup' | 'email-sent' | 'forgot';
+type Mode = 'signin' | 'signup' | 'forgot' | 'forgot-sent';
 
 export default function SignInPage() {
   const [mode, setMode] = useState<Mode>('signin');
   const [loading, setLoading] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
-  const [forgotSent, setForgotSent] = useState(false);
 
   const handleOAuth = async (provider: string) => {
     setLoading(provider);
     await signIn(provider, { callbackUrl: '/dashboard' });
   };
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setLoading('email');
+    setLoading('credentials');
 
-    // Send magic link (passwordless)
+    const result = await signIn('credentials', {
+      email: email.trim().toLowerCase(),
+      password,
+      redirect: false,
+      callbackUrl: '/dashboard',
+    });
+
+    if (result?.error) {
+      setError('Incorrect email or password. Please try again.');
+      setLoading(null);
+    } else if (result?.url) {
+      window.location.href = result.url;
+    }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setLoading('signup');
+
     try {
-      const res = await fetch('/api/auth/magic-link', {
+      // Step 1: Create the account
+      const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password, name: name.trim() }),
       });
+
       const data = await res.json();
+
       if (!res.ok) {
-        setError(data.error || 'Failed to send sign-in link. Try GitHub or Google.');
+        setError(data.error || 'Failed to create account');
+        setLoading(null);
+        return;
+      }
+
+      // Step 2: Sign in automatically
+      const result = await signIn('credentials', {
+        email: email.trim().toLowerCase(),
+        password,
+        redirect: false,
+        callbackUrl: '/dashboard',
+      });
+
+      if (result?.url) {
+        window.location.href = result.url;
       } else {
-        setMode('email-sent');
+        setError('Account created but sign-in failed. Please sign in manually.');
+        setMode('signin');
+        setLoading(null);
       }
     } catch {
-      setError('Network error. Please try again.');
-    } finally {
+      setError('Something went wrong. Please try again.');
       setLoading(null);
     }
   };
@@ -50,16 +87,21 @@ export default function SignInPage() {
   const handleForgot = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading('forgot');
-    // Send magic link as password reset
     try {
       await fetch('/api/auth/magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: email.trim() }),
       });
-      setForgotSent(true);
     } catch {}
+    setMode('forgot-sent');
     setLoading(null);
+  };
+
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    setError('');
+    setPassword('');
   };
 
   return (
@@ -77,8 +119,8 @@ export default function SignInPage() {
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800
           rounded-2xl shadow-xl shadow-zinc-200/60 dark:shadow-black/30 overflow-hidden">
 
-          {/* Logo header */}
-          <div className="px-8 pt-8 pb-6 text-center border-b border-zinc-100 dark:border-zinc-800">
+          {/* Header */}
+          <div className="px-8 pt-8 pb-5 text-center border-b border-zinc-100 dark:border-zinc-800">
             <PaperForgeLogo size={40} className="mx-auto" />
             <h1 className="mt-3 text-xl font-bold text-zinc-900 dark:text-zinc-100">PaperForge</h1>
             <p className="mt-1 text-zinc-400 text-xs">Sign in to start analyzing papers</p>
@@ -87,22 +129,15 @@ export default function SignInPage() {
           <div className="px-8 py-6">
             <AnimatePresence mode="wait">
 
-              {/* Email sent state */}
-              {mode === 'email-sent' && (
-                <motion.div key="sent" initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
-                  className="text-center py-4 space-y-4">
-                  <div className="w-14 h-14 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mx-auto">
-                    <CheckCircle size={26} className="text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-zinc-900 dark:text-zinc-100 mb-1">Check your inbox</h3>
-                    <p className="text-sm text-zinc-500">We sent a sign-in link to</p>
-                    <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">{email}</p>
-                  </div>
-                  <p className="text-xs text-zinc-400">Link expires in 15 minutes. Check your spam folder if you don't see it.</p>
-                  <button onClick={() => { setMode('signin'); setEmail(''); }}
-                    className="text-xs text-indigo-500 hover:underline">
-                    Use a different method
+              {/* Forgot sent */}
+              {mode === 'forgot-sent' && (
+                <motion.div key="forgot-sent" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                  className="text-center space-y-4 py-2">
+                  <p className="text-sm text-zinc-600 dark:text-zinc-300">
+                    If an account exists for <strong>{email}</strong>, a sign-in link has been sent.
+                  </p>
+                  <button onClick={() => switchMode('signin')} className="text-sm text-indigo-500 hover:underline">
+                    Back to sign in
                   </button>
                 </motion.div>
               )}
@@ -111,49 +146,35 @@ export default function SignInPage() {
               {mode === 'forgot' && (
                 <motion.form key="forgot" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }}
                   onSubmit={handleForgot} className="space-y-4">
-                  <button type="button" onClick={() => { setMode('signin'); setForgotSent(false); }}
+                  <button type="button" onClick={() => switchMode('signin')}
                     className="text-xs text-zinc-400 hover:text-zinc-600 transition-colors">
                     Back to sign in
                   </button>
                   <div>
-                    <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Reset access</h3>
+                    <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 mb-1">Reset password</h3>
                     <p className="text-xs text-zinc-400">Enter your email and we will send a sign-in link.</p>
                   </div>
-                  {forgotSent ? (
-                    <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 text-sm text-center">
-                      Sign-in link sent to {email}
-                    </div>
-                  ) : (
-                    <>
-                      <div className="relative">
-                        <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                        <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                          placeholder="Email address" required
-                          className="w-full pl-9 pr-4 py-2.5 rounded-xl text-sm bg-zinc-50 dark:bg-zinc-800
-                            border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100
-                            placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                      </div>
-                      <button type="submit" disabled={loading === 'forgot'}
-                        className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm disabled:opacity-60 transition-colors">
-                        {loading === 'forgot' ? 'Sending...' : 'Send sign-in link'}
-                      </button>
-                    </>
-                  )}
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                    placeholder="Email address" required
+                    className={inputCls} />
+                  <button type="submit" disabled={loading === 'forgot'} className={btnCls('indigo')}>
+                    {loading === 'forgot' ? 'Sending...' : 'Send reset link'}
+                  </button>
                 </motion.form>
               )}
 
-              {/* Main sign-in / sign-up */}
+              {/* Sign in / Sign up */}
               {(mode === 'signin' || mode === 'signup') && (
-                <motion.div key="main" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                <motion.div key={mode} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
 
-                  {/* Sign in / Sign up toggle */}
+                  {/* Toggle */}
                   <div className="text-center">
                     <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 mb-1">
                       {mode === 'signin' ? 'Sign In' : 'Create Account'}
                     </h2>
                     <p className="text-sm text-zinc-400">
                       {mode === 'signin' ? 'Not registered yet? ' : 'Already have an account? '}
-                      <button onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}
+                      <button onClick={() => switchMode(mode === 'signin' ? 'signup' : 'signin')}
                         className="text-indigo-500 hover:text-indigo-600 font-semibold transition-colors">
                         {mode === 'signin' ? 'Sign Up' : 'Sign In'}
                       </button>
@@ -176,22 +197,27 @@ export default function SignInPage() {
                     <div className="flex-1 h-px bg-zinc-100 dark:bg-zinc-800" />
                   </div>
 
-                  {/* Email form */}
-                  <form onSubmit={handleEmailAuth} className="space-y-3">
+                  {/* Email/password form */}
+                  <form onSubmit={mode === 'signin' ? handleSignIn : handleSignUp} className="space-y-3">
+                    {mode === 'signup' && (
+                      <div>
+                        <label className={labelCls}>Full name</label>
+                        <input type="text" value={name} onChange={e => setName(e.target.value)}
+                          placeholder="Your name" required className={inputCls} />
+                      </div>
+                    )}
+
                     <div>
-                      <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block mb-1">Email</label>
+                      <label className={labelCls}>Email</label>
                       <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                        placeholder="Email address" required
-                        className="w-full px-3.5 py-2.5 rounded-xl text-sm bg-zinc-50 dark:bg-zinc-800
-                          border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100
-                          placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                        placeholder="Email address" required className={inputCls} />
                     </div>
 
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <label className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Password</label>
+                        <label className={labelCls}>Password</label>
                         {mode === 'signin' && (
-                          <button type="button" onClick={() => { setMode('forgot'); setForgotSent(false); }}
+                          <button type="button" onClick={() => switchMode('forgot')}
                             className="text-xs text-indigo-500 hover:text-indigo-600 transition-colors">
                             Forgot password?
                           </button>
@@ -200,10 +226,9 @@ export default function SignInPage() {
                       <div className="relative">
                         <input type={showPw ? 'text' : 'password'} value={password}
                           onChange={e => setPassword(e.target.value)}
-                          placeholder="Password" required
-                          className="w-full px-3.5 pr-10 py-2.5 rounded-xl text-sm bg-zinc-50 dark:bg-zinc-800
-                            border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100
-                            placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                          placeholder={mode === 'signup' ? 'Min. 6 characters' : 'Password'}
+                          required minLength={mode === 'signup' ? 6 : 1}
+                          className={inputCls + ' pr-10'} />
                         <button type="button" onClick={() => setShowPw(!showPw)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600">
                           {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -217,16 +242,16 @@ export default function SignInPage() {
                       </p>
                     )}
 
-                    <button type="submit" disabled={loading === 'email' || !email || !password}
-                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
-                        text-white font-bold text-sm disabled:opacity-60 transition-colors
-                        flex items-center justify-center gap-2">
-                      {loading === 'email' ? <Spinner /> : null}
-                      {loading === 'email' ? 'Please wait...' : mode === 'signin' ? 'SIGN IN' : 'CREATE ACCOUNT'}
+                    <button type="submit"
+                      disabled={loading === 'credentials' || loading === 'signup' || !email || !password}
+                      className={btnCls('indigo') + ' font-bold tracking-wide'}>
+                      {(loading === 'credentials' || loading === 'signup') ? (
+                        <><Spinner /> Please wait...</>
+                      ) : mode === 'signin' ? 'SIGN IN' : 'CREATE ACCOUNT'}
                     </button>
                   </form>
 
-                  {/* GitHub - highlighted as required for push feature */}
+                  {/* GitHub */}
                   <div className="pt-1 border-t border-zinc-100 dark:border-zinc-800">
                     <button onClick={() => handleOAuth('github')} disabled={!!loading}
                       className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl
@@ -253,6 +278,17 @@ export default function SignInPage() {
     </div>
   );
 }
+
+// Shared styles
+const inputCls = `w-full px-3.5 py-2.5 rounded-xl text-sm bg-zinc-50 dark:bg-zinc-800
+  border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100
+  placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent`;
+
+const labelCls = 'text-xs font-medium text-zinc-600 dark:text-zinc-400 block mb-1';
+
+const btnCls = (color: string) => `w-full py-2.5 rounded-xl text-white text-sm
+  disabled:opacity-60 transition-colors flex items-center justify-center gap-2
+  ${color === 'indigo' ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-zinc-900 hover:bg-zinc-800'}`;
 
 function Spinner({ dark }: { dark?: boolean }) {
   return (
