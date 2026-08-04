@@ -14,6 +14,7 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
   const { data: session } = useSession();
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<ProcessingJob | null>(null);
+  const [fullResult, setFullResult] = useState<ProcessingJob | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'spec' | 'code' | 'diagram'>('spec');
   const [showExport, setShowExport] = useState(false);
@@ -38,7 +39,19 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
         if (!activeFile && data.generatedCode?.files?.[0]) {
           setActiveFile(data.generatedCode.files[0].path);
         }
-        if (data.status === 'complete' || data.status === 'failed') clearInterval(timer);
+        if (data.status === 'complete' || data.status === 'failed') {
+          clearInterval(timer);
+          // Fetch full result (with code) only once on completion
+          if (data.status === 'complete') {
+            fetch(`/api/result/${jobId}`)
+              .then(r => r.json())
+              .then(full => {
+                setFullResult(full);
+                if (full.generatedCode?.files?.[0]) setActiveFile(full.generatedCode.files[0].path);
+              })
+              .catch(() => {});
+          }
+        }
       } catch (e) {
         setFetchError(`Connection error`);
         clearInterval(timer);
@@ -50,6 +63,7 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
   }, [jobId]);
 
   const isProcessing = !job || (job.status !== 'complete' && job.status !== 'failed');
+  const displayJob = fullResult || job;
 
   if (fetchError) return (
     <div className="min-h-screen bg-white dark:bg-zinc-950">
@@ -85,7 +99,7 @@ export default function ProcessingPage({ params }: { params: Promise<{ jobId: st
           <FailedView error={job.error} />
         ) : (
           <ResultsView
-            job={job!}
+            job={displayJob!}
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             activeFile={activeFile}
