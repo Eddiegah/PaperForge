@@ -1,15 +1,16 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  // Allow large PDF uploads
   experimental: {
     serverActions: {
       bodySizeLimit: '32mb',
     },
   },
-  // Disable strict mode for mermaid client-side rendering compatibility
-  // Re-enable after confirming mermaid renders correctly in strict mode
   reactStrictMode: false,
+  // Ensure clients always get fresh JS chunks after deployments
+  generateBuildId: async () => {
+    return `build-${Date.now()}`;
+  },
 };
 
 export default nextConfig;
