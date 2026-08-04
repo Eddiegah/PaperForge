@@ -4,24 +4,30 @@ import Google from 'next-auth/providers/google';
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   secret: process.env.NEXTAUTH_SECRET,
+  trustHost: true,
   providers: [
     GitHub({
       clientId: process.env.GITHUB_CLIENT_ID!,
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
       authorization: {
-        params: {
-          scope: 'read:user user:email repo',
-        },
+        params: { scope: 'read:user user:email repo' },
       },
     }),
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          prompt: 'consent',
+          access_type: 'offline',
+          response_type: 'code',
+        },
+      },
     }),
   ],
   pages: {
     signIn: '/auth/signin',
-    error: '/auth/signin', // Redirect errors back to sign-in page
+    error: '/auth/error', // Send to dedicated error page, NOT back to signin
   },
   callbacks: {
     async session({ session, token }) {
@@ -40,5 +46,4 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return token;
     },
   },
-  trustHost: true, // Required for Vercel deployment
 });
