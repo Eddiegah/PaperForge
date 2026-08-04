@@ -56,20 +56,34 @@ export async function extractTechnicalSpec(rawText: string): Promise<{
   metadata: PaperMetadata;
   technicalSpec: TechnicalSpec;
 }> {
-  const truncated = rawText.length > 80000 ? rawText.slice(0, 80000) : rawText;
+  const truncated = rawText.length > 40000 ? rawText.slice(0, 40000) : rawText;
 
   const text = await generate({
     prompt: `${EXTRACTION_PROMPT}\n\n---PAPER TEXT START---\n${truncated}\n---PAPER TEXT END---`,
-    maxTokens: 4096,
+    maxTokens: 8192,
     temperature: 0.1,
   });
 
   let parsed: any;
   try {
     const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    parsed = JSON.parse(cleaned);
-  } catch {
-    throw new Error(`Failed to parse LLM extraction response. Raw: ${text.slice(0, 300)}`);
+    // Try full parse first
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      // If truncated, try to close the JSON and parse what we have
+      const recovered = cleaned
+        .replace(/,\s*$/, '')  // remove trailing comma
+        .replace(/"\s*$/, '"') // close open string
+        + '}}}}';              // close nested objects
+      try {
+        parsed = JSON.parse(recovered);
+      } catch {
+        throw new Error(`Response truncated or malformed. The paper may be too long. Try a shorter paper or arXiv ID. Raw snippet: ${text.slice(0, 200)}`);
+      }
+    }
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(`Parse failed: ${text.slice(0, 200)}`);
   }
 
   const metadata: PaperMetadata = {
