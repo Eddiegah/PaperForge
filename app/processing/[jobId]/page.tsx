@@ -194,7 +194,11 @@ function ResultsView({ job, activeTab, setActiveTab, activeFile, setActiveFile, 
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-6">
         <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-1">{job.paperMetadata?.title}</h1>
         {job.paperMetadata?.authors?.length > 0 && (
-          <p className="text-zinc-500 text-sm mb-2">{job.paperMetadata.authors.join(', ')}</p>
+          <p className="text-zinc-500 text-sm mb-2">
+            {Array.isArray(job.paperMetadata.authors)
+              ? job.paperMetadata.authors.join(', ')
+              : job.paperMetadata.authors}
+          </p>
         )}
         {job.paperMetadata?.abstract && (
           <p className="text-zinc-500 dark:text-zinc-400 text-sm leading-relaxed line-clamp-3">{job.paperMetadata.abstract}</p>

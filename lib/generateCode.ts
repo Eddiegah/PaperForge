@@ -9,7 +9,7 @@ function buildPrompt(metadata: PaperMetadata, spec: TechnicalSpec, score: Diffic
   return `You are generating a research paper reproduction starter repository.
 
 Paper: "${metadata.title}"
-Authors: ${metadata.authors.join(', ')}
+Authors: ${Array.isArray(metadata.authors) ? metadata.authors.join(', ') : metadata.authors || ''}
 
 Technical Spec:
 ${JSON.stringify(spec, null, 2)}
@@ -90,7 +90,7 @@ function generateReadme(metadata: PaperMetadata, spec: TechnicalSpec, score: Dif
 > This is a starting scaffold, not a verified reproduction. Review all flagged ambiguities.
 
 ## Authors
-${metadata.authors.join(', ')}
+${Array.isArray(metadata.authors) ? metadata.authors.join(', ') : metadata.authors || 'Unknown'}
 
 ## Abstract
 ${metadata.abstract}
