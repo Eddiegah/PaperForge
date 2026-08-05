@@ -370,6 +370,7 @@ function DiagramView({ mermaidCode }: { mermaidCode: string }) {
 function ExportModal({ jobId, paperTitle, onClose, githubToken }: any) {
   const [token, setToken] = useState('');
   const [repoName, setRepoName] = useState(paperTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50));
+  const [isPrivate, setIsPrivate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
 
@@ -379,7 +380,7 @@ function ExportModal({ jobId, paperTitle, onClose, githubToken }: any) {
     const res = await fetch('/api/github-export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, githubToken: t, repoName }),
+      body: JSON.stringify({ jobId, githubToken: t, repoName, isPrivate }),
     });
     const data = await res.json();
     setResult(data);
@@ -391,7 +392,7 @@ function ExportModal({ jobId, paperTitle, onClose, githubToken }: any) {
       <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl p-6 w-full max-w-md space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="font-semibold text-zinc-900 dark:text-zinc-100">Push to GitHub</h2>
-          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 text-xl">×</button>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-600 text-xl leading-none">×</button>
         </div>
         {result?.repoUrl ? (
           <div className="space-y-3">
@@ -412,11 +413,35 @@ function ExportModal({ jobId, paperTitle, onClose, githubToken }: any) {
                   className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
             )}
+
             <div className="space-y-1">
               <label className="text-xs text-zinc-500">Repository name</label>
               <input value={repoName} onChange={e => setRepoName(e.target.value)}
                 className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             </div>
+
+            {/* Public / Private toggle */}
+            <div className="flex rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700">
+              <button
+                type="button"
+                onClick={() => setIsPrivate(false)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
+                  !isPrivate ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                }`}
+              >
+                🌐 Public
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsPrivate(true)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium transition-colors ${
+                  isPrivate ? 'bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900' : 'bg-white dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-700'
+                }`}
+              >
+                🔒 Private
+              </button>
+            </div>
+
             {result?.error && <p className="text-red-500 text-sm">{result.error}</p>}
             <button onClick={submit} disabled={loading || (!githubToken && !token)}
               className="w-full py-2.5 rounded-xl bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 font-medium text-sm disabled:opacity-50">
