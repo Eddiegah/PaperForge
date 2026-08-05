@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { neon } from '@neondatabase/serverless';
+import { getUsageCount } from '@/lib/db';
 
 export async function GET() {
   const session = await auth();
@@ -8,21 +8,12 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  if (!process.env.DATABASE_URL) {
-    return NextResponse.json({ used: 0, limit: 5, monthYear: '' });
-  }
-
-  const sql = neon(process.env.DATABASE_URL);
   const monthYear = new Date().toISOString().slice(0, 7);
 
   try {
-    const rows = await sql`
-      SELECT paper_count FROM usage_tracking
-      WHERE user_email = ${session.user.email} AND month_year = ${monthYear}
-    `;
-    const used = (rows[0] as any)?.paper_count ?? 0;
-    return NextResponse.json({ used, limit: 5, monthYear });
+    const { used, limit, isPro } = await getUsageCount(session.user.email, 5);
+    return NextResponse.json({ used, limit, monthYear, isPro });
   } catch {
-    return NextResponse.json({ used: 0, limit: 5, monthYear });
+    return NextResponse.json({ used: 0, limit: 5, monthYear, isPro: false });
   }
 }

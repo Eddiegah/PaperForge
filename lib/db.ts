@@ -5,7 +5,7 @@
  * Setup: go to neon.tech, create a free project, copy the connection string.
  * Add DATABASE_URL to Vercel environment variables.
  *
- * Falls back gracefully if DATABASE_URL is not set (history won't persist).
+ * Falls back to Upstash Redis if DATABASE_URL is not set.
  */
 
 import { neon } from '@neondatabase/serverless';
@@ -16,6 +16,18 @@ function getDb() {
   if (!process.env.DATABASE_URL) return null;
   if (!_sql) _sql = neon(process.env.DATABASE_URL);
   return _sql;
+}
+
+function isRedisConfigured() {
+  return !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+}
+
+async function getRedis() {
+  const { Redis } = await import('@upstash/redis');
+  return new Redis({
+    url: process.env.UPSTASH_REDIS_REST_URL!,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+  });
 }
 
 /**
@@ -61,7 +73,35 @@ export async function saveToHistory(params: {
   difficultyScore?: number;
 }): Promise<void> {
   const sql = getDb();
-  if (!sql) return;
+
+  if (!sql) {
+    // Fallback: save to Upstash Redis
+    if (!isRedisConfigured()) return;
+    try {
+      const redis = await getRedis();
+      const key = `history:${params.userEmail}`;
+      const existing = await redis.get<string>(key);
+      const history: any[] = existing
+        ? (typeof existing === 'string' ? JSON.parse(existing) : existing)
+        : [];
+
+      const entry = {
+        id: `hist_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        jobId: params.jobId,
+        paperTitle: params.paperTitle,
+        arxivId: params.arxivId ?? null,
+        difficultyScore: params.difficultyScore ?? null,
+        createdAt: new Date().toISOString(),
+      };
+
+      history.unshift(entry);
+      const trimmed = history.slice(0, 20);
+      await redis.set(key, JSON.stringify(trimmed));
+    } catch (e) {
+      console.error('saveToHistory (Redis) failed:', e);
+    }
+    return;
+  }
 
   try {
     await initDb();
@@ -92,7 +132,22 @@ export async function getUserHistory(userEmail: string, limit = 20): Promise<{
   createdAt: string;
 }[]> {
   const sql = getDb();
-  if (!sql) return [];
+
+  if (!sql) {
+    // Fallback: read from Upstash Redis
+    if (!isRedisConfigured()) return [];
+    try {
+      const redis = await getRedis();
+      const key = `history:${userEmail}`;
+      const raw = await redis.get<string>(key);
+      if (!raw) return [];
+      const history: any[] = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return history.slice(0, limit);
+    } catch (e) {
+      console.error('getUserHistory (Redis) failed:', e);
+      return [];
+    }
+  }
 
   try {
     await initDb();
@@ -122,11 +177,44 @@ export async function checkAndIncrementUsage(
   userEmail: string,
   freeLimit = 5
 ): Promise<{ allowed: boolean; used: number; limit: number }> {
-  const sql = getDb();
-  // If no DB, always allow (graceful degradation)
-  if (!sql) return { allowed: true, used: 0, limit: freeLimit };
+  // Check pro status via Redis first
+  if (isRedisConfigured()) {
+    try {
+      const redis = await getRedis();
+      const isPro = await redis.get<string>(`pro:${userEmail}`);
+      if (isPro === 'true') {
+        return { allowed: true, used: 0, limit: 999 };
+      }
+    } catch (e) {
+      console.error('checkAndIncrementUsage (pro check) failed:', e);
+    }
+  }
 
+  const sql = getDb();
   const monthYear = new Date().toISOString().slice(0, 7); // "2025-08"
+
+  if (!sql) {
+    // Fallback: use Upstash Redis as counter
+    if (!isRedisConfigured()) return { allowed: true, used: 0, limit: freeLimit };
+
+    try {
+      const redis = await getRedis();
+      const key = `usage:${userEmail}:${monthYear}`;
+      const current = await redis.get<number>(key) ?? 0;
+      const count = typeof current === 'number' ? current : parseInt(String(current), 10) || 0;
+
+      if (count >= freeLimit) {
+        return { allowed: false, used: count, limit: freeLimit };
+      }
+
+      // Set TTL to end of next month (~ 60 days) to auto-expire old keys
+      await redis.set(key, count + 1, { ex: 60 * 60 * 24 * 60 });
+      return { allowed: true, used: count + 1, limit: freeLimit };
+    } catch (e) {
+      console.error('checkAndIncrementUsage (Redis) failed:', e);
+      return { allowed: true, used: 0, limit: freeLimit };
+    }
+  }
 
   try {
     await initDb();
@@ -162,5 +250,51 @@ export async function checkAndIncrementUsage(
     console.error('checkAndIncrementUsage failed:', e);
     // On DB error, allow the request (don't break the app)
     return { allowed: true, used: 0, limit: freeLimit };
+  }
+}
+
+/** Get the current usage count for a user this month (read-only, no increment) */
+export async function getUsageCount(
+  userEmail: string,
+  freeLimit = 5
+): Promise<{ used: number; limit: number; isPro: boolean }> {
+  // Check pro status
+  let isPro = false;
+  if (isRedisConfigured()) {
+    try {
+      const redis = await getRedis();
+      const proVal = await redis.get<string>(`pro:${userEmail}`);
+      isPro = proVal === 'true';
+    } catch {}
+  }
+
+  if (isPro) return { used: 0, limit: 999, isPro: true };
+
+  const monthYear = new Date().toISOString().slice(0, 7);
+  const sql = getDb();
+
+  if (!sql) {
+    if (!isRedisConfigured()) return { used: 0, limit: freeLimit, isPro: false };
+    try {
+      const redis = await getRedis();
+      const key = `usage:${userEmail}:${monthYear}`;
+      const current = await redis.get<number>(key) ?? 0;
+      const count = typeof current === 'number' ? current : parseInt(String(current), 10) || 0;
+      return { used: count, limit: freeLimit, isPro: false };
+    } catch {
+      return { used: 0, limit: freeLimit, isPro: false };
+    }
+  }
+
+  try {
+    await initDb();
+    const rows = await sql`
+      SELECT paper_count FROM usage_tracking
+      WHERE user_email = ${userEmail} AND month_year = ${monthYear}
+    ` as any[];
+    const used = (rows[0] as any)?.paper_count ?? 0;
+    return { used, limit: freeLimit, isPro: false };
+  } catch {
+    return { used: 0, limit: freeLimit, isPro: false };
   }
 }

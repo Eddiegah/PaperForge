@@ -7,8 +7,10 @@ import { ThemeToggle } from './ThemeToggle';
 import { PaperForgeWordmark } from './Logo';
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogOut, LayoutDashboard, ChevronDown, Plus, Home, Settings } from 'lucide-react';
+import { LogOut, LayoutDashboard, ChevronDown, Plus, Home, Settings, Shield } from 'lucide-react';
 import SettingsModal from './SettingsModal';
+
+const ADMIN_EMAIL = process.env.NEXT_PUBLIC_ADMIN_EMAIL || 'gahedmunderic@gmail.com';
 
 export function Navbar() {
   const { data: session } = useSession();
@@ -16,10 +18,13 @@ export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  const isAdmin = session?.user?.email === ADMIN_EMAIL;
+
   // Determine if we're inside the app (not on landing page)
   const isAppPage = pathname.startsWith('/dashboard') ||
                     pathname.startsWith('/processing') ||
-                    pathname.startsWith('/auth');
+                    pathname.startsWith('/auth') ||
+                    pathname.startsWith('/admin');
 
   return (
     <>
@@ -41,6 +46,13 @@ export function Navbar() {
                 <Home size={14} />
                 Dashboard
               </Link>
+              {isAdmin && (
+                <Link href="/admin"
+                  className={`flex items-center gap-1.5 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors ${pathname === '/admin' ? 'text-zinc-900 dark:text-zinc-100 font-medium' : ''}`}>
+                  <Shield size={14} />
+                  Admin
+                </Link>
+              )}
               <Link href="/dashboard"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium transition-colors">
                 <Plus size={14} />
@@ -121,6 +133,13 @@ export function Navbar() {
                           <Settings size={14} className="text-zinc-400" />
                           Settings
                         </button>
+                        {isAdmin && (
+                          <Link href="/admin" onClick={() => setMenuOpen(false)}
+                            className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-indigo-600 dark:text-indigo-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                            <Shield size={14} className="text-indigo-500" />
+                            Admin Panel
+                          </Link>
+                        )}
                       </div>
 
                       <div className="border-t border-zinc-100 dark:border-zinc-800 py-1">
